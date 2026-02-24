@@ -1,0 +1,190 @@
+using System;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using Polly;
+using Polly.CircuitBreaker;
+using Polly.Retry;
+
+namespace Hyz.HttpClient
+{
+    /// <summary>
+    /// HttpClient策略配置
+    /// </summary>
+    public static class HttpClientPolicy
+    {
+        private static readonly object _lock = new object();
+
+        /// <summary>
+        /// 重试配置选项
+        /// </summary>
+        public class RetryOptions
+        {
+            /// <summary>
+            /// 最大重试次数
+            /// </summary>
+            public int MaxRetryAttempts { get; set; } = 3;
+
+            /// <summary>
+            /// 退避策略类型
+            /// </summary>
+            public DelayBackoffType BackoffType { get; set; } = DelayBackoffType.Exponential;
+
+            /// <summary>
+            /// 初始延迟
+            /// </summary>
+            public TimeSpan InitialDelay { get; set; } = TimeSpan.FromMilliseconds(200);
+
+            /// <summary>
+            /// 重试事件
+            /// </summary>
+            public Action<OnRetryArguments<object>>? OnRetry { get; set; }
+        }
+
+        /// <summary>
+        /// 熔断配置选项
+        /// </summary>
+        public class CircuitBreakerOptions
+        {
+            /// <summary>
+            /// 失败率阈值
+            /// </summary>
+            public double FailureRatio { get; set; } = 1.0;
+
+            /// <summary>
+            /// 采样时间窗口
+            /// </summary>
+            public TimeSpan SamplingDuration { get; set; } = TimeSpan.FromSeconds(2);
+
+            /// <summary>
+            /// 最小吞吐量
+            /// </summary>
+            public int MinimumThroughput { get; set; } = 4;
+
+            /// <summary>
+            /// 熔断持续时间
+            /// </summary>
+            public TimeSpan BreakDuration { get; set; } = TimeSpan.FromSeconds(3);
+
+            /// <summary>
+            /// 熔断打开事件
+            /// </summary>
+            public Action<OnCircuitOpenedArguments<object>>? OnOpened { get; set; }
+
+            /// <summary>
+            /// 熔断关闭事件
+            /// </summary>
+            public Action<OnCircuitClosedArguments<object>>? OnClosed { get; set; }
+
+            /// <summary>
+            /// 熔断半开事件
+            /// </summary>
+            public Action<OnCircuitHalfOpenedArguments>? OnHalfOpened { get; set; }
+        }
+
+        private static ResiliencePipeline<object>? _cachedPipeline;
+        private static RetryOptions _retryOptions = new RetryOptions();
+        private static CircuitBreakerOptions _circuitBreakerOptions = new CircuitBreakerOptions();
+
+        /// <summary>
+        /// 配置重试选项
+        /// </summary>
+        /// <param name="options">重试选项</param>
+        public static void ConfigureRetry(RetryOptions options)
+        {
+            if (options == null)
+            {
+                throw new ArgumentNullException(nameof(options));
+            }
+            
+            lock (_lock)
+            {
+                _retryOptions = options;
+                _cachedPipeline = null;
+            }
+        }
+
+        /// <summary>
+        /// 配置熔断选项
+        /// </summary>
+        /// <param name="options">熔断选项</param>
+        public static void ConfigureCircuitBreaker(CircuitBreakerOptions options)
+        {
+            if (options == null)
+            {
+                throw new ArgumentNullException(nameof(options));
+            }
+            
+            lock (_lock)
+            {
+                _circuitBreakerOptions = options;
+                _cachedPipeline = null;
+            }
+        }
+
+        /// <summary>
+        /// 获取API管道策略（重试+熔断）
+        /// </summary>
+        public static ResiliencePipeline<object> GetApiPipelinePolicy
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    if (_cachedPipeline != null)
+                    {
+                        return _cachedPipeline;
+                    }
+
+                    var pipelineBuilder = new ResiliencePipelineBuilder<object>();
+
+                    // 添加重试策略
+                    RetryStrategyOptions<object> retryStrategyOptions = new RetryStrategyOptions<object>
+                    {
+                        ShouldHandle = new PredicateBuilder<object>()
+                            .Handle<Exception>(ex => ex is not BrokenCircuitException),
+                        MaxRetryAttempts = _retryOptions.MaxRetryAttempts,
+                        BackoffType = _retryOptions.BackoffType,
+                        Delay = _retryOptions.InitialDelay,
+                        OnRetry = args =>
+                        {
+                            _retryOptions.OnRetry?.Invoke(args);
+                            return new ValueTask();
+                        }
+                    };
+                    pipelineBuilder.AddRetry(retryStrategyOptions);
+
+                    // 添加熔断策略
+                    CircuitBreakerStrategyOptions<object> circuitBreakerStrategyOptions = new CircuitBreakerStrategyOptions<object>
+                    {
+                        ShouldHandle = new PredicateBuilder<object>()
+                            .Handle<HttpRequestException>(),
+                        FailureRatio = _circuitBreakerOptions.FailureRatio,
+                        SamplingDuration = _circuitBreakerOptions.SamplingDuration,
+                        MinimumThroughput = _circuitBreakerOptions.MinimumThroughput,
+                        BreakDuration = _circuitBreakerOptions.BreakDuration,
+                        OnOpened = args =>
+                        {
+                            _circuitBreakerOptions.OnOpened?.Invoke(args);
+                            return new ValueTask();
+                        },
+                        OnClosed = args =>
+                        {
+                            _circuitBreakerOptions.OnClosed?.Invoke(args);
+                            return new ValueTask();
+                        },
+                        OnHalfOpened = args =>
+                        {
+                            _circuitBreakerOptions.OnHalfOpened?.Invoke(args);
+                            return new ValueTask();
+                        }
+                    };
+                    pipelineBuilder.AddCircuitBreaker(circuitBreakerStrategyOptions);
+
+                    _cachedPipeline = pipelineBuilder.Build();
+                    return _cachedPipeline;
+                }
+            }
+        }
+    }
+}
