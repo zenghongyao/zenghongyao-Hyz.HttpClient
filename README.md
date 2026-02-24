@@ -29,13 +29,13 @@ using Microsoft.Extensions.DependencyInjection;
 var services = new ServiceCollection();
 
 // 方式1：使用默认配置
-services.AddHttpClient();
+services.AddHyzHttpClient();
 
 // 方式2：自定义HttpClient名称
-services.AddHttpClient("MyApi");
+services.AddHyzHttpClient("MyApi");
 
 // 方式3：配置HttpClient
-services.AddHttpClient("MyApi", client =>
+services.AddHyzHttpClient("MyApi", client =>
 {
     client.BaseAddress = new Uri("https://api.example.com");
     client.Timeout = TimeSpan.FromSeconds(30);

@@ -20,7 +20,7 @@ namespace Hyz.HttpClient
         /// <param name="configureClient">配置HttpClient（可选）</param>
         /// <param name="configureJsonSerializer">配置JsonSerializerOptions（可选）</param>
         /// <returns>服务集合</returns>
-        public static IServiceCollection AddEasyHttpClient(
+        public static IServiceCollection AddHyzHttpClient(
             this IServiceCollection services,
             string? httpClientName = null,
             Action<System.Net.Http.HttpClient>? configureClient = null,
