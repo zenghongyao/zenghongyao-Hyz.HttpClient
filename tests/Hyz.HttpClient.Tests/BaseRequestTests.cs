@@ -11,6 +11,7 @@ namespace Hyz.HttpClient.Tests
     {
         private class TestRequest : BaseRequest<object>
         {
+            
         }
 
         [Fact]
