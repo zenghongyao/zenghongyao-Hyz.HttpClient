@@ -274,12 +274,6 @@ var response = await _httpClientService.ExecutePostAsync<CreateUserResponse>(
 | `GetBody()` | 获取请求体对象 |
 | `Method` | HTTP 方法（GET/POST/PUT/DELETE/PATCH） |
 
-### BaseApiResponse
-
-| 属性 | 说明 |
-|------|------|
-| `Code` | 错误码，0 表示成功 |
-| `Result` | 请求是否成功（Code == 0） |
 
 ## 💡 最佳实践
 
